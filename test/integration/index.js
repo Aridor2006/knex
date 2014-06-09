@@ -7,10 +7,12 @@ module.exports = function(testSuite) {
   var mysql    = logger.client(Knex(config.mysql));
   var postgres = logger.client(Knex(config.postgres));
   var sqlite3  = logger.client(Knex(config.sqlite3));
+  var oracle  = logger.client(Knex(config.oracle));
 
   require('./suite')(mysql);
   require('./suite')(postgres);
   require('./suite')(sqlite3);
+  require('./suite')(oracle);
 
   after(function(done) {
     if (config.sqlite3.connection.filename !== ':memory:') {

@@ -63,6 +63,19 @@ module.exports = {
     },
     pool: pool,
     migrations: migrations
+  },
+
+  oracle: {
+    client: 'oracle',
+    connection: testConfig.oracle || {
+      hostname: "localhost",
+        port: 1521,
+        database: "orcl", // System ID (SID)
+        user: "knex_test",
+        password: "knex_test"
+    },
+    pool: pool,
+    migrations: migrations
   }
 
 };
