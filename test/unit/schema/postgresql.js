@@ -10,13 +10,14 @@ module.exports = function(client) {
 
   describe("PostgreSQL SchemaBuilder", function() {
 
-    it("basic create table", function() {
+    it("fixes memoization regression", function() {
       tableSql = new SchemaBuilder().createTable('users', function(table) {
+        table.uuid('key');
         table.increments('id');
         table.string('email');
       }).toSQL();
       equal(1, tableSql.length);
-      expect(tableSql[0].sql).to.equal('create table "users" ("id" serial primary key, "email" varchar(255))');
+      expect(tableSql[0].sql).to.equal('create table "users" ("key" uuid, "id" serial primary key, "email" varchar(255))');
     });
 
     it("basic alter table", function() {
@@ -330,10 +331,10 @@ module.exports = function(client) {
 
     it("adding boolean", function() {
       tableSql = new SchemaBuilder().table('users', function(table) {
-        table.boolean('foo');
+        table.boolean('foo').defaultTo(false);
       }).toSQL();
       equal(1, tableSql.length);
-      expect(tableSql[0].sql).to.equal('alter table "users" add column "foo" boolean');
+      expect(tableSql[0].sql).to.equal('alter table "users" add column "foo" boolean default \'0\'');
     });
 
     it("adding enum", function() {
@@ -397,6 +398,13 @@ module.exports = function(client) {
         t.json('preferences').defaultTo({}).notNullable();
       }).toSQL();
       expect(tableSql[0].sql).to.equal('alter table "user" add column "preferences" json not null {}');
+    });
+
+    it('sets specificType correctly', function() {
+      tableSql = new SchemaBuilder().table('user', function(t) {
+        t.specificType('email', 'CITEXT').unique().notNullable();
+      }).toSQL();
+      expect(tableSql[0].sql).to.equal('alter table "user" add column "email" CITEXT not null');
     });
 
   });

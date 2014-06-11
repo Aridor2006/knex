@@ -238,6 +238,11 @@ module.exports = function(pgclient, mysqlclient, sqlite3client) {
       expect(chain.sql).to.equal('select * from "users" order by "email" asc, "age" desc');
     });
 
+    it("multiple order bys", function() {
+      chain = sqlite3().select('*').from('users').orderBy('email').orderBy('age', 'desc').toSQL();
+      expect(chain.sql).to.equal('select * from "users" order by "email" collate nocase asc, "age" collate nocase desc');
+    });
+
     it("havings", function() {
       chain = sql().select('*').from('users').having('email', '>', 1).toSQL();
       expect(chain.sql).to.equal('select * from "users" having "email" > ?');
@@ -658,6 +663,18 @@ module.exports = function(pgclient, mysqlclient, sqlite3client) {
     it("#287 - wraps correctly for arrays", function() {
       var str = sql().select('*').from('value').join('table', 'table.array_column[1]', '=', raw('?', 1)).toString();
       expect(str).to.equal('select * from "value" inner join "table" on "table"."array_column"[1] = \'1\'');
+    });
+
+    it('allows wrap on raw to wrap in parens and alias', function() {
+      var str = sql().select(
+        'e.lastname',
+        'e.salary',
+        raw(
+          sql().select('avg(salary)').from('employee').whereRaw('dept_no = e.dept_no')
+        ).wrap('(', ') avg_sal_dept')
+      ).from('employee as e')
+      .where('dept_no', '=', 'e.dept_no').toString();
+      expect(str).to.equal('select "e"."lastname", "e"."salary", (select "avg(salary)" from "employee" where dept_no = e.dept_no) avg_sal_dept from "employee" as "e" where "dept_no" = \'e.dept_no\'');
     });
 
   });

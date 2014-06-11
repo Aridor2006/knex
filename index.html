@@ -32,7 +32,7 @@
   <div id="sidebar" class="interface">
 
     <a class="toc_title" href="#">
-      Knex.js <span class="version">(0.6.3)</span>
+      Knex.js <span class="version">(0.6.12)</span>
     </a>
     <ul class="toc_section">
       <li>&raquo; <a href="https://github.com/tgriesser/knex">GitHub Repository</a></li>
@@ -141,6 +141,7 @@
       <li>– <a href="#Schema-hasTable">hasTable</a></li>
       <li>– <a href="#Schema-dropTableIfExists">dropTableIfExists</a></li>
       <li>– <a href="#Schema-table">table</a></li>
+      <li>– <a href="#Schema-raw">raw</a></li>
       <li><b><a href="#Schema-Building">Schema Building:</a></b></li>
       <li>– <a href="#Schema-dropColumn">dropColumn</a></li>
       <li>– <a href="#Schema-dropColumns">dropColumns</a></li>
@@ -188,6 +189,7 @@
     <ul class="toc_section">
       <li>– <a href="#Raw-Expressions">Raw Expressions</a></li>
       <li>– <a href="#Raw-Queries">Raw Queries</a></li>
+      <li>- <a href="#Raw-queries-wrapped">Wrapped Queries</a></li>
     </ul>
 
     <a class="toc_title" href="#Interfaces">
@@ -268,7 +270,6 @@
 
     <p>
       The project is <a href="http://github.com/tgriesser/knex">hosted on GitHub</a>,
-      and the <a href="docs/knex.html">annotated source code</a> is available,
       and has a comprehensive <a href="https://travis-ci.org/tgriesser/knex">test suite</a>.
     </p>
 
@@ -294,7 +295,7 @@
     </p>
 
 
-    <h2>Latest Release: 0.6.3 - <span class="small"><a href="#changelog">Change Log</a></span></h2>
+    <h2>Latest Release: 0.6.12 - <span class="small"><a href="#changelog">Change Log</a></span></h2>
 
     <p>
       Current Develop &mdash;
@@ -1029,12 +1030,12 @@ knex('accounts')
 
 knex.transaction(function(trx) {
 
-  knex('books').transacting(t).insert({name: 'Old Books'})
+  knex('books').transacting(trx).insert({name: 'Old Books'})
     .then(function(id) {
-      return someExternalMethod(t);
+      return someExternalMethod(trx);
     })
-    .then(t.commit)
-    .then(t.rollback);
+    .then(trx.commit)
+    .then(trx.rollback);
 
 }).then(function(resp) {
   console.log('Transaction complete.');
@@ -1447,6 +1448,21 @@ knex.schema.table('users', function (table) {
 })
 </pre>
 
+    <p id="Schema-raw">
+      <b class="header">raw</b><code>knex.schema.raw(statement)</code>
+      <br />
+      Run an arbitrary sql query in the schema builder chain.
+    </p>
+
+<pre class="display">
+knex.schema.raw("SET sql_mode='TRADITIONAL'")
+  .table('users', function (table) {
+    table.dropColumn('name');
+    table.string('first_name');
+    table.string('last_name');
+  })
+</pre>
+
     <h3 id="Schema-Building">Schema Building:</h3>
 
     <p id="Schema-dropColumn">
@@ -1743,6 +1759,21 @@ knex('users')
       executing against to determine how to handle the response.
     </p>
 
+    <h3 id="Raw-queries-wrapped">Wrapped Queries:</h3>
+
+    <p>
+      The raw query builder also comes with a <tt>wrap</tt> method, which allows wrapping the query in parens, and creating an alias on an entire query.
+    </p>
+
+<pre class="display">var subcolumn = knex.raw(knex.select('avg(salary)')
+  .from('employee')
+  .whereRaw('dept_no = e.dept_no'))
+  .wrap('(', ') avg_sal_dept');
+
+knex.select('e.lastname', 'e.salary', subcolumn)
+  .from('employee as e')
+  .where('dept_no', '=', 'e.dept_no')
+</pre>
 
     <h2 id="Interfaces">Interfaces</h2>
 
@@ -2046,12 +2077,24 @@ knex.select('*').from('users').where(knex.raw('id = ?', [1])).toString()
     <h3 id="Migrations-CLI">Migration CLI</h3>
 
     <p>
-      The migration CLI is stored in a <a href="https://github.com/bookshelf/knex-cli">separate repository</a> and
-      is driven by the <a href="https://github.com/tkellen/node-liftoff">node-liftoff</a> module. Running:
+      The migration CLI is bundled with the knex install, and is driven by the <a href="https://github.com/tkellen/node-liftoff">node-liftoff</a> module. To install globally, run:
+    </p>
+
+<pre>
+$ npm install knex -g
+</pre>
+
+    <p>
+      The 0.6 migrations use a <b>knexfile</b>, which specify various configuration settings for the module. To create a new
+      knexfile, run the following:
     </p>
 
 <pre>
 $ knex init
+
+# or for .coffee
+
+$ knex init -x coffee
 </pre>
 
     <p>
@@ -2165,22 +2208,77 @@ $ npm test
     <h2 id="changelog">Change Log</h2>
 
     <p>
-      <b class="header">0.6.3</b> &mdash; <small><i>June 6, 2014</i></small><br />
-      <ul>
-        <li>Schema methods on transaction object are now transaction aware (#301).</li>
-        <li>Fix for resolved value from transactions, (#298).</li>
-        <li>Undefined columns are not added to builder.</li>
-      </ul>
+      <b class="header">0.6.12</b> &mdash; <small><i>June 10, 2014</i></small><br />
+      Fix for regression with boolean default types in PostgreSQL.
     </p>
 
     <p>
-      <b class="header">0.6.2</b> &mdash; <small><i>June 4, 2014</i></small><br />
-      <ul>
-        <li>Fix regression in raw query output, (#297).</li>
-        <li>Fix regression in "pluck" method (#296).</li>
-        <li>Document <a href="#Builder-first">first</a> method.</li>
-      </ul>
+      <b class="header">0.6.11</b> &mdash; <small><i>June 10, 2014</i></small><br />
+      Fix for regression with queries containing multiple <tt>order by</tt> statements in sqlite3.
     </p>
+
+    <p>
+      <b class="header">0.6.10</b> &mdash; <small><i>June 10, 2014</i></small><br />
+      Fix for big regression in memoization of column names from 0.5 -> 0.6.
+    </p>
+
+    <p>
+      <b class="header">0.6.9</b> &mdash; <small><i>June 9, 2014</i></small><br />
+      Fix for regression in <tt>specificType</tt> method.
+    </p>
+
+    <p>
+      <b class="header">0.6.8</b> &mdash; <small><i>June 9, 2014</i></small><br />
+      Package.json fix for CLI.
+    </p>
+
+    <p>
+      <b class="header">0.6.7</b> &mdash; <small><i>June 9, 2014</i></small><br />
+    </p>
+    <ul>
+      <li>Adds support for <a href="https://github.com/sidorares/node-mysql2">node-mysql2</a> library.</li>
+      <li>Bundles CLI with the knex install, various related migrate CLI fixes.</li>
+    </ul>
+
+    <p>
+      <b class="header">0.6.6</b> &mdash; <small><i>June 9, 2014</i></small><br />
+    </p>
+
+    <ul>
+      <li>console.warn rather than throw when adding foreignKeys in SQLite3.</li>
+      <li>Add support for dropColumn in SQLite3.</li>
+      <li>Document <tt>raw.wrap</tt>.</li>
+    </ul>
+
+    <p>
+      <b class="header">0.6.5</b> &mdash; <small><i>June 9, 2014</i></small><br />
+      Add missing <tt>_</tt> require to WebSQL builds.
+    </p>
+
+    <p>
+      <b class="header">0.6.4</b> &mdash; <small><i>June 9, 2014</i></small><br />
+      Fix &amp; document <a href="#Schema-raw">schema.raw</a> method.
+    </p>
+
+    <p>
+      <b class="header">0.6.3</b> &mdash; <small><i>June 6, 2014</i></small><br />
+    </p>
+
+    <ul>
+      <li>Schema methods on transaction object are now transaction aware (#301).</li>
+      <li>Fix for resolved value from transactions, (#298).</li>
+      <li>Undefined columns are not added to builder.</li>
+    </ul>
+
+    <p>
+      <b class="header">0.6.2</b> &mdash; <small><i>June 4, 2014</i></small><br />
+    </p>
+
+    <ul>
+      <li>Fix regression in raw query output, (#297).</li>
+      <li>Fix regression in "pluck" method (#296).</li>
+      <li>Document <a href="#Builder-first">first</a> method.</li>
+    </ul>
 
     <p>
       <b class="header">0.6.1</b> &mdash; <small><i>June 4, 2014</i></small><br />

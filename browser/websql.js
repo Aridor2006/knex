@@ -1,5 +1,5 @@
 !function(e){if("object"==typeof exports&&"undefined"!=typeof module)module.exports=e();else if("function"==typeof define&&define.amd)define([],e);else{var f;"undefined"!=typeof window?f=window:"undefined"!=typeof global?f=global:"undefined"!=typeof self&&(f=self),f.Knex=e()}}(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);throw new Error("Cannot find module '"+o+"'")}var f=n[o]={exports:{}};t[o][0].call(f.exports,function(e){var n=t[o][1][e];return s(n?n:e)},f,f.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(_dereq_,module,exports){
-// Knex.js  0.6.2
+// Knex.js  0.6.12
 // --------------
 
 //     (c) 2014 Tim Griesser
@@ -25,6 +25,7 @@ var Raw = _dereq_('./lib/raw');
 
 // Doing it this way makes it easier to build for browserify.
 var mysql = function() { return _dereq_('./lib/dialects/mysql'); };
+var mysql2 = function() { return _dereq_('./lib/dialects/mysql2'); };
 var maria = function() { return _dereq_('./lib/dialects/maria'); };
 var pg = function() { return _dereq_('./lib/dialects/postgres'); };
 var sqlite3 = function() { return _dereq_('./lib/dialects/sqlite3'); };
@@ -33,6 +34,7 @@ var websql = function() { return _dereq_('./lib/dialects/websql'); };
 // The client names we'll allow in the `{name: lib}` pairing.
 var Clients = Knex.Clients = {
   'mysql'      : mysql,
+  'mysql2'     : mysql2,
   'maria'      : maria,
   'mariadb'    : maria,
   'mariasql'   : maria,
@@ -79,7 +81,7 @@ Knex.initialize = function(config) {
 
   // The `__knex__` is used if you need to duck-type check whether this
   // is a knex builder, without a full on `instanceof` check.
-  knex.VERSION = knex.__knex__  = '0.6.2';
+  knex.VERSION = knex.__knex__  = '0.6.12';
   knex.raw = function(sql, bindings) {
     var raw = new client.Raw(sql, bindings);
     raw.on('query', function(data) {
@@ -420,7 +422,7 @@ Formatter_SQLite3.prototype.wrapValue = function(value) {
 var wrapperMemo = (function(){
   var memo = Object.create(null);
   return function(key) {
-    if (memo.key === void 0) {
+    if (memo[key] === void 0) {
       memo[key] = this._wrapString(key);
     }
     return memo[key];
@@ -630,10 +632,10 @@ QueryCompiler_SQLite3.prototype.insert = function() {
 QueryCompiler_SQLite3.prototype.order = function() {
   var orders = this.grouped.order;
   if (!orders) return '';
-  return _.map(orders, function(order) {
+  return 'order by ' + _.map(orders, function(order) {
     var cols = _.isArray(order.value) ? order.value : [order.value];
-    return 'order by ' + this.formatter.columnize(cols) + ' collate nocase ' + this.formatter.direction(order.direction);
-  }, this);
+    return this.formatter.columnize(cols) + ' collate nocase ' + this.formatter.direction(order.direction);
+  }, this).join(', ');
 };
 
 // Compiles an `update` query.
@@ -827,11 +829,6 @@ ColumnCompiler_SQLite3.prototype.decimal =
 ColumnCompiler_SQLite3.prototype.floating = 'float';
 ColumnCompiler_SQLite3.prototype.timestamp = 'datetime';
 
-// Compile a drop column command.
-ColumnCompiler_SQLite3.prototype.dropColumn = function() {
-  throw new Error("Drop column not supported for SQLite.");
-};
-
 client.ColumnBuilder = ColumnBuilder_SQLite3;
 client.ColumnCompiler = ColumnCompiler_SQLite3;
 
@@ -959,20 +956,44 @@ SQLite3_DDL.prototype.renameColumn = Promise.method(function(from, to) {
       .then(this.dropOriginal)
       .then(function() {
         return this.runner.query({sql: createTable.sql.replace(a, b)});
-      }).then(this.reinsertData(function(row) {
+      })
+      .then(this.reinsertData(function(row) {
         row[to] = row[from];
         return _.omit(row, from);
-      })).then(this.dropTempTable);
+      }))
+      .then(this.dropTempTable);
     })
     .tap(this.commitTransaction)
     .catch(this.rollbackTransaction);
 });
 
 SQLite3_DDL.prototype.dropColumn = Promise.method(function(column) {
-  return this.getColumn(column)
-    .then(function() {
-
-    });
+   var currentCol;
+   return this.getColumn(column)
+    .bind(this)
+    .tap(function(col) { currentCol = col; })
+    .then(this.ensureTransaction)
+    .then(this.getTableSql)
+    .then(function(sql) {
+      var createTable = sql[0];
+      var a = this.formatter.wrap(column) + ' ' + currentCol.type + ', ';
+      if (createTable.sql.indexOf(a) === -1) {
+        throw new Error('Unable to find the column to change');
+      }
+      return Promise.bind(this)
+        .then(this.createTempTable(createTable))
+        .then(this.copyData)
+        .then(this.dropOriginal)
+        .then(function() {
+          return this.runner.query({sql: createTable.sql.replace(a, '')});
+        })
+        .then(this.reinsertData(function(row) {
+          return _.omit(row, column);
+        }))
+        .then(this.dropTempTable);
+    })
+    .tap(this.commitTransaction)
+    .catch(this.rollbackTransaction);
 });
 
 client.SQLite3_DDL = SQLite3_DDL;
@@ -1123,7 +1144,7 @@ TableCompiler_SQLite3.prototype.index = function(columns, indexName) {
 TableCompiler_SQLite3.prototype.primary =
 TableCompiler_SQLite3.prototype.foreign = function() {
   if (this.method !== 'create') {
-    throw new Error('Foreign & Primary keys may only be added on create');
+    console.warn('SQLite3 Foreign & Primary keys may only be added on create');
   }
 };
 
@@ -1199,6 +1220,7 @@ client.Transaction = Transaction_SQLite3;
 // WebSQL
 // -------
 var inherits = _dereq_('inherits');
+var _        = _dereq_('lodash');
 
 var Client_SQLite3 = _dereq_('../sqlite3/index');
 var Promise = _dereq_('../../promise');
@@ -1244,7 +1266,7 @@ Client_WebSQL.prototype.acquireConnection = function() {
 Client_WebSQL.prototype.releaseConnection = Promise.method(function(connection) {});
 
 module.exports = Client_WebSQL;
-},{"../../promise":24,"../sqlite3/index":5,"./runner":18,"inherits":45}],18:[function(_dereq_,module,exports){
+},{"../../promise":24,"../sqlite3/index":5,"./runner":18,"inherits":45,"lodash":"K2RcUv"}],18:[function(_dereq_,module,exports){
 // Runner
 // -------
 module.exports = function(client) {
@@ -1256,6 +1278,7 @@ _dereq_('../sqlite3/runner')(client);
 var Runner_SQLite3 = client.Runner;
 
 var inherits = _dereq_('inherits');
+var _        = _dereq_('lodash');
 
 // Inherit from the `Runner` constructor's prototype,
 // so we can add the correct `then` method.
@@ -1310,7 +1333,7 @@ Runner_WebSQL.prototype.processResponse = function(obj) {
 client.Runner = Runner_WebSQL;
 
 };
-},{"../../promise":24,"../sqlite3/runner":10,"inherits":45}],19:[function(_dereq_,module,exports){
+},{"../../promise":24,"../sqlite3/runner":10,"inherits":45,"lodash":"K2RcUv"}],19:[function(_dereq_,module,exports){
 // Mixed into the query compiler & schema pieces. Assumes a `grammar`
 // property exists on the current object.
 var _            = _dereq_('lodash');
@@ -2822,8 +2845,10 @@ var inherits = _dereq_('inherits');
 var EventEmitter = _dereq_('events').EventEmitter;
 
 function Raw(sql, bindings) {
-  if (sql.toSQL) {
-    return this._processQuery(sql);
+  if (sql && sql.toSQL) {
+    var output = sql.toSQL();
+    sql = output.sql;
+    bindings = output.bindings;
   }
   this.sql = sql;
   this.bindings = _.isArray(bindings) ? bindings :
@@ -2851,12 +2876,6 @@ Raw.prototype.toSQL = function() {
     method: 'raw',
     bindings: this.bindings
   };
-};
-
-// Convert the query toSQL.
-Raw.prototype._processQuery = function(sql) {
-  var processed = sql.toSQL();
-  return new this.constructor(processed.sql, processed.bindings);
 };
 
 // Allow the `Raw` object to be utilized with full access to the relevant
@@ -3096,7 +3115,7 @@ inherits(SchemaBuilder, EventEmitter);
 // "_sequence" array for consistency.
 _.each([
   'createTable', 'table', 'alterTable', 'hasTable', 'hasColumn',
-  'dropTable', 'renameTable', 'dropTableIfExists', 'raw'
+  'dropTable', 'renameTable', 'dropTableIfExists', 'raw', 'debug'
 ], function(method) {
   SchemaBuilder.prototype[method] = function() {
     if (method === 'table') method = 'alterTable';
@@ -3310,7 +3329,7 @@ ColumnCompiler.prototype.bit =
 ColumnCompiler.prototype.json = 'text';
 
 ColumnCompiler.prototype.uuid = 'char(36)';
-ColumnCompiler.prototype.specificType = function(type) {
+ColumnCompiler.prototype.specifictype = function(type) {
   return type;
 };
 
@@ -3330,9 +3349,7 @@ ColumnCompiler.prototype.defaultTo = function(value) {
     value = value.toQuery();
   } else if (this.type === 'bool') {
     if (value === 'false') value = 0;
-    value = (value ? 1 : 0);
-  } else if (value === true || value === false) {
-    value = parseInt(value, 10);
+    value = "'" + (value ? 1 : 0) + "'";
   } else if (this.type === 'json' && _.isObject(value)) {
     return JSON.stringify(value);
   } else {
@@ -3381,6 +3398,9 @@ SchemaCompiler.prototype.toSQL = function() {
     this[query.method].apply(this, query.args);
   }
   return this.sequence;
+};
+SchemaCompiler.prototype.raw = function(sql, bindings) {
+  this.sequence.push(new this.client.Raw(sql, bindings).toSQL());
 };
 
 module.exports = SchemaCompiler;
@@ -3437,7 +3457,7 @@ module.exports = {
 };
 },{"./builder":31,"./columnbuilder":32,"./columncompiler":33,"./compiler":34,"./tablebuilder":37,"./tablecompiler":38,"lodash":"K2RcUv"}],36:[function(_dereq_,module,exports){
 module.exports = ['table', 'createTable', 'editTable', 'dropTable',
-  'dropTableIfExists',  'renameTable', 'hasTable', 'hasColumn'];
+  'dropTableIfExists',  'renameTable', 'hasTable', 'hasColumn', 'raw', 'debug'];
 },{}],37:[function(_dereq_,module,exports){
 // TableBuilder
 
@@ -5104,7 +5124,6 @@ var lookup = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
     ? Uint8Array
     : Array
 
-	var ZERO   = '0'.charCodeAt(0)
 	var PLUS   = '+'.charCodeAt(0)
 	var SLASH  = '/'.charCodeAt(0)
 	var NUMBER = '0'.charCodeAt(0)
@@ -5213,9 +5232,9 @@ var lookup = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 		return output
 	}
 
-	module.exports.toByteArray = b64ToByteArray
-	module.exports.fromByteArray = uint8ToBase64
-}())
+	exports.toByteArray = b64ToByteArray
+	exports.fromByteArray = uint8ToBase64
+}(typeof exports === 'undefined' ? (this.base64js = {}) : exports))
 
 },{}],43:[function(_dereq_,module,exports){
 exports.read = function(buffer, offset, isLE, mLen, nBytes) {

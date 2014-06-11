@@ -1,4 +1,4 @@
-// Knex.js  0.6.3
+// Knex.js  0.6.12
 // --------------
 
 //     (c) 2014 Tim Griesser
@@ -24,6 +24,7 @@ var Raw = require('./lib/raw');
 
 // Doing it this way makes it easier to build for browserify.
 var mysql = function() { return require('./lib/dialects/mysql'); };
+var mysql2 = function() { return require('./lib/dialects/mysql2'); };
 var maria = function() { return require('./lib/dialects/maria'); };
 var oracle = function() { return require('./lib/dialects/oracle'); };
 var pg = function() { return require('./lib/dialects/postgres'); };
@@ -33,6 +34,7 @@ var websql = function() { return require('./lib/dialects/websql'); };
 // The client names we'll allow in the `{name: lib}` pairing.
 var Clients = Knex.Clients = {
   'mysql'      : mysql,
+  'mysql2'     : mysql2,
   'maria'      : maria,
   'mariadb'    : maria,
   'mariasql'   : maria,
@@ -80,7 +82,7 @@ Knex.initialize = function(config) {
 
   // The `__knex__` is used if you need to duck-type check whether this
   // is a knex builder, without a full on `instanceof` check.
-  knex.VERSION = knex.__knex__  = '0.6.3';
+  knex.VERSION = knex.__knex__  = '0.6.12';
   knex.raw = function(sql, bindings) {
     var raw = new client.Raw(sql, bindings);
     raw.on('query', function(data) {

@@ -5,11 +5,13 @@ module.exports = function(testSuite) {
   var fs     = require('fs');
 
   var mysql    = logger.client(Knex(config.mysql));
+  var mysql2   = logger.client(Knex(config.mysql2));
   var postgres = logger.client(Knex(config.postgres));
   var sqlite3  = logger.client(Knex(config.sqlite3));
   var oracle  = logger.client(Knex(config.oracle));
 
   require('./suite')(mysql);
+  require('./suite')(mysql2);
   require('./suite')(postgres);
   require('./suite')(sqlite3);
   require('./suite')(oracle);
